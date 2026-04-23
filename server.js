@@ -16,7 +16,7 @@ app.listen(PORT, () => console.log(`Serveur sur port ${PORT}`));
 // Connexion Redis
 const client = redis.createClient({
   socket: {
-    host: process.env.REDIS_HOST || "redis",
+    host: process.env.REDIS_HOST || "novadb",
     port: process.env.REDIS_PORT || 6379
   }
 });
