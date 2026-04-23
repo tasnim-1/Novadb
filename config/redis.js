@@ -5,7 +5,7 @@ const { createClient } = require('redis');
 // Exemple : REDIS_URL=redis://redis:6379 (Docker)
 // Exemple : REDIS_URL=redis://127.0.0.1:6379 (local)
 const client = createClient({
-  url: process.env.REDIS_URL || 'redis://127.0.0.1:6379'
+  url: process.env.REDIS_URL || 'redis://localhost:6379'
 });
 
 // Gestion des événements
