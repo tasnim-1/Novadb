@@ -32,8 +32,7 @@ const CSS = `
 
   /* ── Blobs ── */
   @keyframes blobDrift {
-    0%,100% { transform: translate(0,0) scale(1); }
-    33%     { transform: translate(28px,-18px) scale(1.06); }
+    0%,100% { transform: translate(0,0) scale(1); }cle  
     66%     { transform: translate(-16px,22px) scale(0.94); }
   }
 
@@ -669,17 +668,23 @@ export default function App() {
   const handleSignup = async (e) => {
     e?.preventDefault();
     setLoading(true);
+
     try {
-      const res = await fetch("/api/auth/signup", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
-      });
+      const res = await fetch(
+        `${process.env.REACT_APP_API_URL}/api/auth/signup`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, password }),
+        }
+      );
+
       const data = await res.json();
       showToast(res.ok ? "ok" : "err", data.message);
+
       if (res.ok) setIsLogin(true);
-    } catch {
-      showToast("err", "Erreur réseau");
+    } catch (err) {
+      showToast("err", "Erreur réseau (backend indisponible)");
     } finally {
       setLoading(false);
     }
@@ -688,20 +693,26 @@ export default function App() {
   const handleLogin = async (e) => {
     e?.preventDefault();
     setLoading(true);
+
     try {
-      const res = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
-      });
+      const res = await fetch(
+        `${process.env.REACT_APP_API_URL}/api/auth/login`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, password }),
+        }
+      );
+
       const data = await res.json();
       showToast(res.ok ? "ok" : "err", data.message);
+
       if (res.ok) {
         localStorage.setItem("sessionId", data.sessionId);
         setPage("dashboard");
       }
-    } catch {
-      showToast("err", "Erreur réseau");
+    } catch (err) {
+      showToast("err", "Erreur réseau (backend indisponible)");
     } finally {
       setLoading(false);
     }
@@ -710,12 +721,19 @@ export default function App() {
   const handleProfile = async () => {
     if (profileLoaded) return;
     setLoading(true);
+
     try {
       const sessionId = localStorage.getItem("sessionId");
-      const res = await fetch("/api/auth/profile", {
-        headers: { Authorization: sessionId },
-      });
+
+      const res = await fetch(
+        `${process.env.REACT_APP_API_URL}/api/auth/profile`,
+        {
+          headers: { Authorization: sessionId },
+        }
+      );
+
       const data = await res.json();
+
       if (res.ok) {
         setProfile(data);
         setProfileLoaded(true);
@@ -723,30 +741,38 @@ export default function App() {
       } else {
         showToast("err", data.message);
       }
-    } catch {
-      showToast("err", "Erreur lors du chargement");
+    } catch (err) {
+      showToast("err", "Erreur réseau");
     } finally {
       setLoading(false);
     }
   };
-
   const handleLogout = async () => {
     setLoading(true);
+
     try {
       const sessionId = localStorage.getItem("sessionId");
-      const res = await fetch("/api/auth/logout", {
-        method: "POST",
-        headers: { Authorization: sessionId },
-      });
+
+      const res = await fetch(
+        `${process.env.REACT_APP_API_URL}/api/auth/logout`,
+        {
+          method: "POST",
+          headers: { Authorization: sessionId },
+        }
+      );
+
       const data = await res.json();
+
       localStorage.removeItem("sessionId");
+
       showToast("ok", data.message);
+
       setProfile(null);
       setProfileLoaded(false);
       setDdOpen(false);
       setPage("auth");
-    } catch {
-      showToast("err", "Erreur lors de la déconnexion");
+    } catch (err) {
+      showToast("err", "Erreur réseau");
     } finally {
       setLoading(false);
     }
