@@ -2,27 +2,14 @@ const express = require("express");
 const bcrypt = require("bcrypt");
 const bodyParser = require("body-parser");
 const { v4: uuidv4 } = require("uuid");
-const redis = require("novadb");
+const client = require("./config/redis"); // ✅ utiliser redis.js
 const { encrypt, decrypt } = require("./utils/crypto");
 
 const app = express();
 app.use(bodyParser.json());
 
-// ⚠️ À remplacer par une vraie base de données
 const users = [];
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`Serveur sur port ${PORT}`));
-
-// Connexion Redis
-const client = redis.createClient({
-  socket: {
-    host: process.env.REDIS_HOST || "novadb",
-    port: process.env.REDIS_PORT || 6379
-  }
-});
-
-client.on("error", (err) => console.error("Redis error:", err));
-client.connect();
 
 // ====================== HEALTH CHECK ======================
 app.get("/", (req, res) => {
@@ -30,93 +17,165 @@ app.get("/", (req, res) => {
     status: "OK",
     message: "Session Management API is running",
     endpoints: {
-      signup:  "POST /api/auth/signup",
-      login:   "POST /api/auth/login",
-      profile: "GET  /api/auth/profile",
-      logout:  "POST /api/auth/logout"
+      signup: "POST /api/auth/signup",
+      login: "POST /api/auth/login",
+      profile: "GET /api/auth/profile",
+      logout: "POST /api/auth/logout"
     }
   });
 });
 
 // ====================== SIGNUP ======================
 app.post("/api/auth/signup", async (req, res) => {
-  const { email, password } = req.body;
-  if (!email || !password)
-    return res.status(400).json({ message: "Email et mot de passe requis" });
+  try {
+    const { email, password } = req.body;
 
-  const exists = users.find(u => u.email === email);
-  if (exists)
-    return res.status(409).json({ message: "Utilisateur déjà existant" });
+    if (!email || !password) {
+      return res.status(400).json({
+        message: "Email et mot de passe requis"
+      });
+    }
 
-  const hashedPassword = await bcrypt.hash(password, 10);
-  users.push({ email, password: hashedPassword });
-  res.json({ message: "Compte créé avec succès" });
+    const exists = users.find((u) => u.email === email);
+
+    if (exists) {
+      return res.status(409).json({
+        message: "Utilisateur déjà existant"
+      });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    users.push({
+      email,
+      password: hashedPassword
+    });
+
+    res.json({
+      message: "Compte créé avec succès"
+    });
+
+  } catch (error) {
+    res.status(500).json({ message: "Erreur serveur" });
+  }
 });
 
 // ====================== LOGIN ======================
 app.post("/api/auth/login", async (req, res) => {
-  const { email, password } = req.body;
-  const user = users.find(u => u.email === email);
-  if (!user) return res.status(401).json({ message: "Utilisateur introuvable" });
+  try {
+    const { email, password } = req.body;
 
-  const valid = await bcrypt.compare(password, user.password);
-  if (!valid) return res.status(401).json({ message: "Mot de passe incorrect" });
+    const user = users.find((u) => u.email === email);
 
-  const sessionId = uuidv4();
+    if (!user) {
+      return res.status(401).json({
+        message: "Utilisateur introuvable"
+      });
+    }
 
-  const session = {
-    email: user.email,
-    last_activity: new Date().toISOString()
-  };
+    const valid = await bcrypt.compare(password, user.password);
 
-  // 🟢 Chiffrer la session avant stockage
-  const encryptedSession = encrypt(session);
+    if (!valid) {
+      return res.status(401).json({
+        message: "Mot de passe incorrect"
+      });
+    }
 
-  // Stocker la session chiffrée dans Redis avec expiration 30 min
-  await client.set('session:${sessionId}', JSON.stringify(encryptedSession), { EX: 1800 });
+    const sessionId = uuidv4();
 
-  res.json({ message: "Login success ✅", sessionId });
+    const session = {
+      email: user.email,
+      last_activity: new Date().toISOString()
+    };
+
+    const encryptedSession = encrypt(session);
+
+    await client.set(
+      `session:${sessionId}`,
+      JSON.stringify(encryptedSession),
+      { EX: 1800 }
+    );
+
+    res.json({
+      message: "Login success ✅",
+      sessionId
+    });
+
+  } catch (error) {
+    res.status(500).json({ message: "Erreur login" });
+  }
 });
 
 // ====================== MIDDLEWARE ======================
 async function authMiddleware(req, res, next) {
-  const sessionId = req.headers["authorization"];
-  if (!sessionId) return res.status(403).json({ message: "Session manquante" });
-
-  const sessionData = await client.get('session:${sessionId}');
-  if (!sessionData) return res.status(401).json({ message: "Session invalide ou expirée" });
-
-  let decryptedSession;
   try {
-    decryptedSession = decrypt(JSON.parse(sessionData));
-  } catch (err) {
-    console.error("Erreur de déchiffrement :", err);
-    return res.status(500).json({ message: "Invalid session data" });
+    const sessionId = req.headers["authorization"];
+
+    if (!sessionId) {
+      return res.status(403).json({
+        message: "Session manquante"
+      });
+    }
+
+    const sessionData = await client.get(`session:${sessionId}`);
+
+    if (!sessionData) {
+      return res.status(401).json({
+        message: "Session invalide ou expirée"
+      });
+    }
+
+    const decryptedSession = decrypt(JSON.parse(sessionData));
+
+    decryptedSession.last_activity = new Date().toISOString();
+
+    const updatedSession = encrypt(decryptedSession);
+
+    await client.set(
+      `session:${sessionId}`,
+      JSON.stringify(updatedSession),
+      { EX: 1800 }
+    );
+
+    req.user = decryptedSession;
+    next();
+
+  } catch (error) {
+    res.status(500).json({
+      message: "Erreur session"
+    });
   }
-
-  // Mise à jour de l'heure de dernière activité
-  decryptedSession.last_activity = new Date().toISOString();
-
-  const updatedSession = encrypt(decryptedSession);
-  await client.set('session:${sessionId}', JSON.stringify(updatedSession), { EX: 1800 });
-
-  req.user = decryptedSession;
-  next();
 }
 
 // ====================== PROFILE ======================
 app.get("/api/auth/profile", authMiddleware, (req, res) => {
-  res.json({ email: req.user.email, last_activity: req.user.last_activity });
+  res.json({
+    email: req.user.email,
+    last_activity: req.user.last_activity
+  });
 });
 
 // ====================== LOGOUT ======================
 app.post("/api/auth/logout", async (req, res) => {
-  const sessionId = req.headers["authorization"];
-  if (sessionId) {
-    await client.del('session:${sessionId}');
+  try {
+    const sessionId = req.headers["authorization"];
+
+    if (sessionId) {
+      await client.del(`session:${sessionId}`);
+    }
+
+    res.json({
+      message: "Déconnexion réussie"
+    });
+
+  } catch (error) {
+    res.status(500).json({
+      message: "Erreur logout"
+    });
   }
-  res.json({ message: "Déconnexion réussie" });
 });
 
 // ====================== SERVER ======================
-app.listen(5000, () => console.log("🚀 API running on port 5000"));
+app.listen(PORT, () => {
+  console.log(`🚀 API running on port ${PORT}`);
+});
