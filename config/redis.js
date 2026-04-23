@@ -1,26 +1,27 @@
-const Redis = require("ioredis");
+// config/redis.js
+const { createClient } = require('redis');
 
-// Utilisation des variables d'environnement pour flexibilité
-const redis = new Redis({
-  host: process.env.REDIS_HOST || "127.0.0.1",
-  port: process.env.REDIS_PORT || 6379,
-  retryStrategy: (times) => {
-    // Reconnexion exponentielle (max 2 secondes)
-    const delay = Math.min(times * 50, 2000);
-    return delay;
-  },
+// Utilisation d'une URL complète pour flexibilité
+// Exemple : REDIS_URL=redis://redis:6379 (Docker)
+// Exemple : REDIS_URL=redis://127.0.0.1:6379 (local)
+const client = createClient({
+  url: process.env.REDIS_URL || 'redis://127.0.0.1:6379'
 });
 
-redis.on("connect", () => {
-  console.log("✅ Redis connecté");
+// Gestion des événements
+client.on('connect', () => {
+  console.log('✅ Redis connecté');
 });
 
-redis.on("error", (err) => {
-  console.error("❌ Erreur Redis:", err);
+client.on('error', (err) => {
+  console.error('❌ Erreur Redis:', err);
 });
 
-redis.on("reconnecting", () => {
-  console.log("♻️ Tentative de reconnexion à Redis...");
+client.on('reconnecting', () => {
+  console.log('♻️ Tentative de reconnexion à Redis...');
 });
 
-module.exports = redis;
+// Connexion explicite
+client.connect();
+
+module.exports = client;
