@@ -1,17 +1,37 @@
 const express = require("express");
+const cors = require("cors");
 const bcrypt = require("bcrypt");
 const bodyParser = require("body-parser");
 const { v4: uuidv4 } = require("uuid");
-const client = require("./config/redis"); // ✅ utiliser redis.js
+
+const client = require("./config/redis");
 const { encrypt, decrypt } = require("./utils/crypto");
 
 const app = express();
+
+/* ======================
+   MIDDLEWARE GLOBAL
+====================== */
+
+app.use(cors({
+  origin: "https://novadb-2.onrender.com", // frontend Render
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+  credentials: true
+}));
+
 app.use(bodyParser.json());
 
-const users = [];
-const PORT = process.env.PORT || 5000;
+/* ======================
+   TEMP DATABASE (PFE ONLY)
+====================== */
 
-// ====================== HEALTH CHECK ======================
+const users = [];
+
+/* ======================
+   HEALTH CHECK
+====================== */
+
 app.get("/", (req, res) => {
   res.json({
     status: "OK",
@@ -25,7 +45,10 @@ app.get("/", (req, res) => {
   });
 });
 
-// ====================== SIGNUP ======================
+/* ======================
+   SIGNUP
+====================== */
+
 app.post("/api/auth/signup", async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -36,7 +59,7 @@ app.post("/api/auth/signup", async (req, res) => {
       });
     }
 
-    const exists = users.find((u) => u.email === email);
+    const exists = users.find(u => u.email === email);
 
     if (exists) {
       return res.status(409).json({
@@ -55,17 +78,21 @@ app.post("/api/auth/signup", async (req, res) => {
       message: "Compte créé avec succès"
     });
 
-  } catch (error) {
-    res.status(500).json({ message: "Erreur serveur" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Erreur serveur signup" });
   }
 });
 
-// ====================== LOGIN ======================
+/* ======================
+   LOGIN + SESSION REDIS
+====================== */
+
 app.post("/api/auth/login", async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    const user = users.find((u) => u.email === email);
+    const user = users.find(u => u.email === email);
 
     if (!user) {
       return res.status(401).json({
@@ -93,7 +120,7 @@ app.post("/api/auth/login", async (req, res) => {
     await client.set(
       `session:${sessionId}`,
       JSON.stringify(encryptedSession),
-      { EX: 1800 }
+      { EX: 1800 } // 30 min
     );
 
     res.json({
@@ -101,12 +128,16 @@ app.post("/api/auth/login", async (req, res) => {
       sessionId
     });
 
-  } catch (error) {
+  } catch (err) {
+    console.error(err);
     res.status(500).json({ message: "Erreur login" });
   }
 });
 
-// ====================== MIDDLEWARE ======================
+/* ======================
+   AUTH MIDDLEWARE
+====================== */
+
 async function authMiddleware(req, res, next) {
   try {
     const sessionId = req.headers["authorization"];
@@ -125,29 +156,31 @@ async function authMiddleware(req, res, next) {
       });
     }
 
-    const decryptedSession = decrypt(JSON.parse(sessionData));
+    const decrypted = decrypt(JSON.parse(sessionData));
 
-    decryptedSession.last_activity = new Date().toISOString();
+    decrypted.last_activity = new Date().toISOString();
 
-    const updatedSession = encrypt(decryptedSession);
+    const updated = encrypt(decrypted);
 
     await client.set(
       `session:${sessionId}`,
-      JSON.stringify(updatedSession),
+      JSON.stringify(updated),
       { EX: 1800 }
     );
 
-    req.user = decryptedSession;
+    req.user = decrypted;
     next();
 
-  } catch (error) {
-    res.status(500).json({
-      message: "Erreur session"
-    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Erreur middleware auth" });
   }
 }
 
-// ====================== PROFILE ======================
+/* ======================
+   PROFILE
+====================== */
+
 app.get("/api/auth/profile", authMiddleware, (req, res) => {
   res.json({
     email: req.user.email,
@@ -155,7 +188,10 @@ app.get("/api/auth/profile", authMiddleware, (req, res) => {
   });
 });
 
-// ====================== LOGOUT ======================
+/* ======================
+   LOGOUT
+====================== */
+
 app.post("/api/auth/logout", async (req, res) => {
   try {
     const sessionId = req.headers["authorization"];
@@ -168,14 +204,18 @@ app.post("/api/auth/logout", async (req, res) => {
       message: "Déconnexion réussie"
     });
 
-  } catch (error) {
-    res.status(500).json({
-      message: "Erreur logout"
-    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Erreur logout" });
   }
 });
 
-// ====================== SERVER ======================
+/* ======================
+   START SERVER
+====================== */
+
+const PORT = process.env.PORT || 5000;
+
 app.listen(PORT, () => {
   console.log(`🚀 API running on port ${PORT}`);
 });
