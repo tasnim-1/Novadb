@@ -2,7 +2,7 @@ const express = require("express");
 const bcrypt = require("bcrypt");
 const bodyParser = require("body-parser");
 const { v4: uuidv4 } = require("uuid");
-const redis = require("redis");
+const redis = require("novadb");
 const { encrypt, decrypt } = require("./utils/crypto");
 
 const app = express();

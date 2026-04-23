@@ -1,5 +1,5 @@
 // config/redis.js
-const { createClient } = require('redis');
+const { createClient } = require('novadb');
 
 // Utilisation d'une URL complète pour flexibilité
 // Exemple : REDIS_URL=redis://redis:6379 (Docker)
