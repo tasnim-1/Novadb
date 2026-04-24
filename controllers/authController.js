@@ -98,7 +98,32 @@ exports.logout = async (req, res) => {
     res.status(500).json({ error: "Server error" });
   }
 };
+// ADMIN - Voir tous les utilisateurs
+exports.getUsers = async (req, res) => {
+  try {
+    const keys = await redis.keys('user:*');
+    
+    if (keys.length === 0) {
+      return res.status(200).json({ message: "Aucun utilisateur", users: [] });
+    }
 
+    const users = [];
+    for (const key of keys) {
+      const userData = await redis.get(key);
+      const user = JSON.parse(userData);
+      users.push({
+        email: user.email,
+        created_at: user.created_at
+        // ⚠️ on n'affiche PAS le mot de passe
+      });
+    }
+
+    res.status(200).json({ total: users.length, users });
+  } catch (error) {
+    console.error("GetUsers error:", error);
+    res.status(500).json({ error: "Server error" });
+  }
+};
 // PROFILE (route protégée)
 exports.profile = async (req, res) => {
   try {
