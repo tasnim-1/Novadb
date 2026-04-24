@@ -108,9 +108,13 @@ app.post("/api/auth/login", async (req, res) => {
 
     const sessionId = uuidv4();
 
+    // ✅ CORRIGÉ
     const session = {
+      user_id: user.email,        // ← renommé user_id comme le cahier
       email: user.email,
-      last_activity: new Date().toISOString()
+      last_activity: new Date().toISOString(),
+      ip_address: req.ip || req.headers['x-forwarded-for'] || 'unknown',
+      user_agent: req.headers['user-agent'] || 'unknown'
     };
 
     const encryptedSession = encrypt(session);
