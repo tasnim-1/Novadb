@@ -14,19 +14,13 @@ const app = express();
 ====================== */
 
 app.use(cors({
-  origin: "https://novadb-2.onrender.com", // frontend Render
+  origin: "https://novadb-2.onrender.com",
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
   credentials: true
 }));
 
 app.use(bodyParser.json());
-
-/* ======================
-   TEMP DATABASE (PFE ONLY)
-====================== */
-
-const users = [];
 
 /* ======================
    HEALTH CHECK
@@ -40,7 +34,8 @@ app.get("/", (req, res) => {
       signup: "POST /api/auth/signup",
       login: "POST /api/auth/login",
       profile: "GET /api/auth/profile",
-      logout: "POST /api/auth/logout"
+      logout: "POST /api/auth/logout",
+      adminUsers: "GET /api/auth/admin/users"
     }
   });
 });
@@ -59,9 +54,9 @@ app.post("/api/auth/signup", async (req, res) => {
       });
     }
 
-    const exists = users.find(u => u.email === email);
-
-    if (exists) {
+    // Vérifier si l'utilisateur existe déjà dans Redis
+    const existing = await client.get(`user:${email}`);
+    if (existing) {
       return res.status(409).json({
         message: "Utilisateur déjà existant"
       });
@@ -69,10 +64,12 @@ app.post("/api/auth/signup", async (req, res) => {
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    users.push({
+    // Stocker dans Redis (persistant)
+    await client.set(`user:${email}`, JSON.stringify({
       email,
-      password: hashedPassword
-    });
+      password: hashedPassword,
+      created_at: new Date().toISOString()
+    }));
 
     res.json({
       message: "Compte créé avec succès"
@@ -92,14 +89,15 @@ app.post("/api/auth/login", async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    const user = users.find(u => u.email === email);
-
-    if (!user) {
+    // Récupérer l'utilisateur depuis Redis
+    const userData = await client.get(`user:${email}`);
+    if (!userData) {
       return res.status(401).json({
         message: "Utilisateur introuvable"
       });
     }
 
+    const user = JSON.parse(userData);
     const valid = await bcrypt.compare(password, user.password);
 
     if (!valid) {
@@ -120,7 +118,7 @@ app.post("/api/auth/login", async (req, res) => {
     await client.set(
       `session:${sessionId}`,
       JSON.stringify(encryptedSession),
-      { EX: 1800 } // 30 min
+      { EX: 1800 }
     );
 
     res.json({
@@ -207,6 +205,36 @@ app.post("/api/auth/logout", async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Erreur logout" });
+  }
+});
+
+/* ======================
+   ADMIN - VOIR LES USERS
+====================== */
+
+app.get("/api/auth/admin/users", async (req, res) => {
+  try {
+    const keys = await client.keys('user:*');
+
+    if (keys.length === 0) {
+      return res.json({ total: 0, users: [] });
+    }
+
+    const usersList = [];
+    for (const key of keys) {
+      const userData = await client.get(key);
+      const user = JSON.parse(userData);
+      usersList.push({
+        email: user.email,
+        created_at: user.created_at || "N/A"
+      });
+    }
+
+    res.json({ total: usersList.length, users: usersList });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Erreur admin/users" });
   }
 });
 
