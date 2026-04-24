@@ -237,6 +237,42 @@ app.get("/api/auth/admin/users", async (req, res) => {
     res.status(500).json({ message: "Erreur admin/users" });
   }
 });
+/* ======================
+   ADMIN - VOIR LES SESSIONS
+====================== */
+
+app.get("/api/auth/admin/sessions", async (req, res) => {
+  try {
+    const keys = await client.keys('session:*');
+
+    if (keys.length === 0) {
+      return res.json({ 
+        total: 0, 
+        message: "Aucune session active",
+        sessions: [] 
+      });
+    }
+
+    const sessions = [];
+    for (const key of keys) {
+      const sessionData = await client.get(key);
+      const ttl = await client.ttl(key); // temps restant en secondes
+      const decrypted = decrypt(JSON.parse(sessionData));
+      sessions.push({
+        session_id: key.replace('session:', ''),
+        email: decrypted.email,
+        last_activity: decrypted.last_activity,
+        expires_in: `${Math.floor(ttl / 60)} minutes ${ttl % 60} secondes`
+      });
+    }
+
+    res.json({ total: sessions.length, sessions });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Erreur admin/sessions" });
+  }
+});
 
 /* ======================
    START SERVER
